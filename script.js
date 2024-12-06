@@ -5,40 +5,78 @@ const container = document.getElementById('canvas-container');
 const tooltip = document.getElementById('tooltip'); // Tooltip element
 
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(75, 1, 0.1, 1000);
-camera.position.z = 2;
+const camera = new THREE.PerspectiveCamera(75,  2, 0.1, 1000);
+camera.position.z = 8;
+camera.position.y = 2;
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
 renderer.setClearColor(0x000000, 0); // Transparent background
-renderer.setSize(500, 500);
+renderer.setSize(1000, 500);
 container.appendChild(renderer.domElement);
 
 const loader = new GLTFLoader();
-let model;
+const textureLoader = new THREE.TextureLoader();
 
 // Load the texture
-const textureLoader = new THREE.TextureLoader();
-const texture = textureLoader.load('./models/texture.png'); // Path to your texture image
+const texture = textureLoader.load(
+    'models/texture.jpg',
+    () => console.log('Texture loaded successfully'),
+    undefined,
+    (error) => console.error('Error loading texture:', error)
+);
 
-// Load the model
-loader.load('models/model.glb', function (gltf) {
-    model = gltf.scene;
-    
-    // Apply the texture to all mesh materials in the model
-    model.traverse((child) => {
-        if (child.isMesh) {
-            child.material.map = texture; // Set the texture
-            child.material.needsUpdate = true; // Notify Three.js that the material needs to be updated
+// Store references to each model
+let model1, model2, model3;
+
+// Function to load and configure a model
+function loadModel(positionX, name) {
+    loader.load(
+        'models/model.glb',
+        function (gltf) {
+            const model = gltf.scene;
+
+            // Apply texture to all mesh materials in the model
+            model.traverse((child) => {
+                if (child.isMesh) {
+                    child.material.map = texture; // Apply texture
+                    child.material.needsUpdate = true; // Update material
+                }
+            });
+
+            model.scale.set(10, 10, 10);
+            model.position.set(positionX, -0.5, 0);
+            scene.add(model);
+
+            // Assign model to the appropriate variable
+            if (name === 'model1') model1 = model;
+            if (name === 'model2') model2 = model;
+            if (name === 'model3') model3 = model;
+
+            console.log(`${name} loaded:`, model);
+        },
+        undefined,
+        function (error) {
+            console.error('An error occurred loading the model:', error);
         }
-    });
+    );
+}
 
-    model.scale.set(3, 3, 3);
-    model.position.set(0, -0.5, 0);
-    scene.add(model);
-    console.log('Model loaded:', model);
-}, undefined, function (error) {
-    console.error('An error occurred loading the model:', error);
-});
+// Load all models
+loadModel(-6, 'model1'); // Left
+loadModel(0, 'model2');  // Center
+loadModel(6, 'model3');  // Right
+
+// Lighting setup
+const light = new THREE.DirectionalLight(0xffffff, 1);
+light.position.set(10, 10, 10).normalize();
+scene.add(light);
+
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+scene.add(ambientLight);
+
+const spotlight = new THREE.SpotLight(0xffffff, 2);
+spotlight.position.set(5, 10, 5);
+scene.add(spotlight);
 
 // Raycaster for detecting hover
 const raycaster = new THREE.Raycaster();
@@ -56,33 +94,64 @@ function onMouseMove(event) {
 
 renderer.domElement.addEventListener('mousemove', onMouseMove, false);
 
-// Animation loop
 function animate() {
     requestAnimationFrame(animate);
 
     // Update the raycaster based on mouse position
     raycaster.setFromCamera(mouse, camera);
 
-    if (model) { // Check if the model is loaded
-        // Calculate objects intersecting the ray
-        const intersects = raycaster.intersectObject(model, true); // Use 'true' for recursive intersection
+    let isHovering = false; // Track whether the mouse is hovering over any model
 
-        if (intersects.length > 0) {
-            // Show tooltip and change color on hover
-            tooltip.style.display = 'block';
-            tooltip.textContent = '3D Model'; // Text to show in tooltip
-            model.traverse((child) => {
-                if (child.isMesh) child.material.color.set(0xff5733);
-            });
-        } else {
-            // Hide tooltip and reset color when not hovering
-            tooltip.style.display = 'none';
+    // Check all models for hover interactions
+    [model1, model2, model3].forEach((model, index) => {
+        if (model) {
+            // Rotate the model
+            model.rotation.y += 0.01;
+
+            // Check for hover
+            const intersects = raycaster.intersectObject(model, true); // Recursive intersection
+            if (intersects.length > 0) {
+                isHovering = true; // Mark as hovering
+                tooltip.style.display = 'block';
+                tooltip.textContent = `Model ${index + 1}`; // Display model-specific tooltip
+            }
         }
+    });
 
-        model.rotation.y += 0.01; // Rotate the model
+      // Change the cursor to pointer when hovering over a model
+      renderer.domElement.style.cursor = isHovering ? 'pointer' : 'default';
+
+    // If not hovering over any model, hide the tooltip
+    if (!isHovering) {
+        tooltip.style.display = 'none';
     }
 
     renderer.render(scene, camera);
 }
 
 animate();
+
+renderer.domElement.addEventListener('click', onModelClick, false);
+
+function onModelClick(event) {
+    // Calculate mouse position in normalized device coordinates
+    const rect = renderer.domElement.getBoundingClientRect();
+    mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+    // Update the raycaster
+    raycaster.setFromCamera(mouse, camera);
+
+    // Check for intersections with each model
+    [model1, model2, model3].forEach((model, index) => {
+        if (model) {
+            const intersects = raycaster.intersectObject(model, true);
+            if (intersects.length > 0) {
+                console.log(`Model ${index + 1} clicked!`);
+
+                // Open a new blank page
+                window.open(`https://example.com/model${index + 1}`, '_blank');
+            }
+        }
+    });
+}
